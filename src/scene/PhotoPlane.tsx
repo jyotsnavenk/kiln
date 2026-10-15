@@ -56,16 +56,15 @@ export function PhotoPlane({ index }: { index: number }) {
     texture.needsUpdate = true;
   }, [canvas, texture, hw, hh]);
 
-  // --- geometry: slightly oversized so edges hide inside the ceramic walls ---
+  // exact window; the ceramic lip overlaps the print
   const geometry = useMemo(() => {
-    const pts = windowPoints(slot.shape, hw * 1.14, hh * 1.14);
+    const pts = windowPoints(slot.shape, hw, hh);
     const geo = new THREE.ShapeGeometry(new THREE.Shape(pts));
-    // planar UVs over the *window* extents so cover-crop math holds
     const pos = geo.getAttribute('position');
     const uv = new Float32Array(pos.count * 2);
     for (let i = 0; i < pos.count; i++) {
-      uv[i * 2] = (pos.getX(i) + hw * 1.14) / (hw * 2.28);
-      uv[i * 2 + 1] = (pos.getY(i) + hh * 1.14) / (hh * 2.28);
+      uv[i * 2] = (pos.getX(i) + hw) / (hw * 2);
+      uv[i * 2 + 1] = (pos.getY(i) + hh) / (hh * 2);
     }
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     return geo;
@@ -87,8 +86,8 @@ export function PhotoPlane({ index }: { index: number }) {
 
   return (
     <group position={[cx, cy, photoZ]}>
-      <mesh geometry={geometry} onPointerDown={onPointerDown}>
-        <meshStandardMaterial map={texture} roughness={0.72} metalness={0} />
+      <mesh geometry={geometry} onPointerDown={onPointerDown} receiveShadow>
+        <meshStandardMaterial map={texture} roughness={0.82} metalness={0} envMapIntensity={0.25} />
       </mesh>
       {isSelected && (
         <group name="handle">

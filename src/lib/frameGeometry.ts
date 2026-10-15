@@ -24,14 +24,18 @@ export function frameExtents(d: Design) {
 }
 
 export function frameDims(d: Design) {
-  const extrudeDepth = d.depth * 0.45;
-  const bevelThickness = d.depth * 0.28;
-  const bevelSize = Math.min(0.085 * d.frameScale, 0.11);
-  // frame mesh is positioned so its back bevel touches the wall (z=0)
-  const meshZ = bevelThickness + 0.005;
-  const photoZ = meshZ + extrudeDepth * 0.45;
-  const frontZ = meshZ + extrudeDepth + bevelThickness;
-  return { extrudeDepth, bevelThickness, bevelSize, meshZ, photoZ, frontZ };
+  const { halfW, halfH } = frameExtents(d);
+  const span = Math.min(halfW, halfH);
+  const thickness = Math.min(0.11 + d.depth * 0.48, span * 0.55);
+  const cornerR = Math.min(0.035 + d.depth * 0.1, span * 0.14, thickness * 0.55);
+  // wide, shallow roll so the glaze slope is visible straight-on
+  const lip = Math.min(0.055 + d.depth * 0.18, span * 0.2);
+  const recess = Math.min(lip * 0.85, thickness * 0.58);
+  const meshZ = 0.004;
+  const frontZ = meshZ + thickness;
+  // just under the inner lip, so the glaze overlaps the print
+  const photoZ = meshZ + thickness - recess - 0.006;
+  return { thickness, cornerR, lip, recess, meshZ, photoZ, frontZ };
 }
 
 /** superellipse point for parameter t (0..2PI) */
@@ -144,33 +148,125 @@ function setPlanarUVs(geo: THREE.BufferGeometry) {
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 }
 
-export function buildFrameGeometry(d: Design): THREE.BufferGeometry {
-  const shape = new THREE.Shape(outlinePoints(d));
+/** outward normals of a CCW ring */
+function ringNormals(pts: THREE.Vector2[]): THREE.Vector2[] {
+  const n = pts.length;
+  const normals: THREE.Vector2[] = [];
+  for (let i = 0; i < n; i++) {
+    const prev = pts[(i - 1 + n) % n];
+    const next = pts[(i + 1) % n];
+    const dx = next.x - prev.x;
+    const dy = next.y - prev.y;
+    const len = Math.hypot(dx, dy) || 1;
+    normals.push(new THREE.Vector2(dy / len, -dx / len));
+  }
+  return normals;
+}
 
-  for (let i = 0; i < d.photoCount; i++) {
-    const slot = d.photos[i];
+function offsetRing(pts: THREE.Vector2[], amount: number): THREE.Vector2[] {
+  const normals = ringNormals(pts);
+  return pts.map((p, i) => new THREE.Vector2(p.x + normals[i].x * amount, p.y + normals[i].y * amount));
+}
+
+/**
+ * Pillow of clay with a quarter-round well around each photo.
+ * The well starts wide on the front face and rolls down onto the print.
+ */
+export function buildFrameGeometry(d: Design): THREE.BufferGeometry {
+  const { thickness, cornerR, lip: lipBase, recess } = frameDims(d);
+  const outline = outlinePoints(d, 160);
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+
+  const addRing = (pts: THREE.Vector2[], z: number, shade: number) =>
+    pts.map((p) => {
+      const i = positions.length / 3;
+      positions.push(p.x, p.y, z);
+      colors.push(shade, shade, shade);
+      return i;
+    });
+
+  // lower ring -> higher ring. reverse = face the other way (into a well)
+  const addStrip = (a: number[], b: number[], reverse: boolean) => {
+    const n = a.length;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      if (!reverse) indices.push(a[i], a[j], b[j], a[i], b[j], b[i]);
+      else indices.push(a[i], b[i], b[j], a[i], b[j], a[j]);
+    }
+  };
+
+  // --- outer pillow: flat against the wall, quarter-round at the front edge ---
+  const OUTER = 16;
+  const outer: number[][] = [];
+  for (let s = 0; s <= OUTER; s++) {
+    const u = s / OUTER;
+    const side = 0.58;
+    let z: number;
+    let inset: number;
+    if (u <= side) {
+      z = (u / side) * (thickness - cornerR);
+      inset = 0;
+    } else {
+      const a = ((u - side) / (1 - side)) * (Math.PI / 2);
+      z = thickness - cornerR + cornerR * Math.sin(a);
+      inset = cornerR * (1 - Math.cos(a));
+    }
+    const shade = 0.78 + 0.22 * u;
+    outer.push(addRing(offsetRing(outline, -inset), z, shade));
+  }
+  for (let s = 0; s < OUTER; s++) addStrip(outer[s], outer[s + 1], false);
+
+  // --- wells: quarter-ellipse from the print up to the front face ---
+  const WELL = 14;
+  const wells: { front: number[]; frontPts: THREE.Vector2[] }[] = [];
+  for (let p = 0; p < d.photoCount; p++) {
+    const slot = d.photos[p];
     const { cx, cy, hw, hh } = windowRect(d, slot);
-    const pts = windowPoints(slot.shape, hw, hh).map((p) => new THREE.Vector2(p.x + cx, p.y + cy));
-    const hole = new THREE.Path(pts);
-    shape.holes.push(hole);
+    const lip = Math.min(lipBase, Math.min(hw, hh) * 0.48);
+    const overlap = Math.min(0.016, Math.min(hw, hh) * 0.08);
+    const base = windowPoints(slot.shape, hw, hh, 72).map(
+      (pt) => new THREE.Vector2(pt.x + cx, pt.y + cy)
+    );
+    const rings: number[][] = [];
+    let frontPts: THREE.Vector2[] = base;
+    for (let s = 0; s <= WELL; s++) {
+      const a = (s / WELL) * (Math.PI / 2);
+      const radial = -overlap + (lip + overlap) * (1 - Math.cos(a));
+      const z = thickness - recess + recess * Math.sin(a);
+      const shade = 0.78 + 0.22 * Math.sin(a);
+      const pts = offsetRing(base, radial);
+      rings.push(addRing(pts, z, shade));
+      if (s === WELL) frontPts = pts;
+    }
+    for (let s = 0; s < WELL; s++) addStrip(rings[s], rings[s + 1], true);
+    wells.push({ front: rings[WELL], frontPts });
   }
 
-  const { extrudeDepth, bevelThickness, bevelSize } = frameDims(d);
-  let geo: THREE.BufferGeometry = new THREE.ExtrudeGeometry(shape, {
-    depth: extrudeDepth,
-    bevelEnabled: true,
-    bevelThickness,
-    bevelSize,
-    bevelOffset: 0,
-    bevelSegments: 9,
-    steps: 1,
-    curveSegments: 4,
+  // --- front face, holes matching the top of each well ---
+  const frontIdx = outer[OUTER];
+  const contour = frontIdx.map((i) => new THREE.Vector2(positions[i * 3], positions[i * 3 + 1]));
+  const indexMap = [...frontIdx];
+  const holePts = wells.map((w) => {
+    const reversed = w.front.slice().reverse();
+    indexMap.push(...reversed);
+    return reversed.map((i) => new THREE.Vector2(positions[i * 3], positions[i * 3 + 1]));
   });
+  const faces = THREE.ShapeUtils.triangulateShape(contour, holePts);
+  for (const [a, b, c] of faces) indices.push(indexMap[a], indexMap[b], indexMap[c]);
 
-  // smooth the pillowy ceramic surface
-  geo.deleteAttribute('uv');
-  geo.deleteAttribute('normal');
-  geo = mergeVertices(geo, 1e-4);
+  // back cap, facing the wall
+  const backIdx = outer[0];
+  const backContour = backIdx.map((i) => new THREE.Vector2(positions[i * 3], positions[i * 3 + 1]));
+  const backFaces = THREE.ShapeUtils.triangulateShape(backContour, []);
+  for (const [a, b, c] of backFaces) indices.push(backIdx[c], backIdx[b], backIdx[a]);
+
+  let geo: THREE.BufferGeometry = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.setIndex(indices);
+  geo = mergeVertices(geo, 1e-5);
   geo.computeVertexNormals();
   setPlanarUVs(geo);
   return geo;

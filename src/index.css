@@ -291,6 +291,44 @@ body {
   flex: 1;
 }
 
+.light-pad-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 2px;
+}
+
+.light-pad {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, #2a241c 0 34%, transparent 35%),
+    var(--panel-row);
+  border: 1px solid #2e2e2e;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.light-pad::after {
+  content: '';
+  position: absolute;
+  inset: 18px;
+  border-radius: 50%;
+  border: 1px dashed #3a342c;
+}
+
+.light-dot {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: #ffd7a0;
+  box-shadow: 0 0 10px #ffb060;
+  pointer-events: none;
+}
+
 .panel-footer {
   margin-top: 14px;
 }

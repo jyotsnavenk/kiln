@@ -1,7 +1,48 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useStore, type BaseShape, type Finish, type PhotoFilter, type PhotoShape } from '../store';
 import { Section, ScrubRow, SegmentRow, ColorRow, ButtonRow } from './controls';
 import { copyImage, exportImage } from '../lib/export';
+
+function LightDial() {
+  const angle = useStore((s) => s.design.lightAngle);
+  const set = useStore((s) => s.set);
+  const commit = useStore((s) => s.commit);
+  const pad = useRef<HTMLDivElement>(null);
+
+  const apply = (e: ReactPointerEvent) => {
+    const el = pad.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * 2 - 1;
+    const y = -(((e.clientY - r.top) / r.height) * 2 - 1);
+    if (x * x + y * y < 0.02) return;
+    set({ lightAngle: ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360 });
+  };
+
+  const rad = ((angle ?? 72) * Math.PI) / 180;
+  const dotX = 50 + Math.cos(rad) * 34;
+  const dotY = 50 - Math.sin(rad) * 34;
+
+  return (
+    <div className="light-pad-wrap">
+      <div
+        ref={pad}
+        className="light-pad"
+        onPointerDown={(e) => {
+          commit();
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          apply(e);
+        }}
+        onPointerMove={(e) => {
+          if (!(e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) return;
+          apply(e);
+        }}
+      >
+        <span className="light-dot" style={{ left: `${dotX}%`, top: `${dotY}%` }} />
+      </div>
+    </div>
+  );
+}
 
 export function RightPanel() {
   const design = useStore((s) => s.design);
@@ -35,6 +76,34 @@ export function RightPanel() {
     <aside className="panel">
       <Section title="Wall">
         <ColorRow label="Color" value={design.wallColor} onChange={(v) => set({ wallColor: v })} />
+      </Section>
+
+      <Section title="Light">
+        <LightDial />
+        <ScrubRow
+          label="Direction"
+          value={design.lightAngle ?? 72}
+          min={0}
+          max={360}
+          decimals={0}
+          format={(v) => `${Math.round(v)}°`}
+          onChange={(v) => set({ lightAngle: v })}
+        />
+        <ScrubRow
+          label="Height"
+          value={design.lightHeight ?? 0.5}
+          min={0}
+          max={1}
+          onChange={(v) => set({ lightHeight: v })}
+        />
+        <ScrubRow
+          label="Distance"
+          value={design.lightDistance ?? 7}
+          min={2.5}
+          max={16}
+          decimals={1}
+          onChange={(v) => set({ lightDistance: v })}
+        />
       </Section>
 
       <Section title="Shape">

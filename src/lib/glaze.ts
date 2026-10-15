@@ -152,12 +152,14 @@ export function makeGlazeMaterial(d: Design): THREE.MeshPhysicalMaterial {
   return new THREE.MeshPhysicalMaterial({
     color: map ? '#ffffff' : d.glazeColor,
     map: map ?? undefined,
-    roughness: matte ? 0.85 : 1 - gloss * 0.82,
-    clearcoat: matte ? 0 : gloss,
-    clearcoatRoughness: 0.32 - gloss * 0.22,
-    envMapIntensity: matte ? 0.35 : 0.5 + gloss * 0.7,
-    sheen: matte ? 0.4 : 0,
+    vertexColors: true,
+    roughness: matte ? 0.85 : 1 - gloss * 0.78,
+    clearcoat: matte ? 0 : 0.15 + gloss * 0.85,
+    clearcoatRoughness: matte ? 0.6 : 0.22 - gloss * 0.14,
+    envMapIntensity: matte ? 0.28 : 0.35 + gloss * 0.55,
+    sheen: matte ? 0.35 : 0.08,
     sheenColor: new THREE.Color(d.glazeColor),
+    sheenRoughness: 0.55,
   });
 }
 

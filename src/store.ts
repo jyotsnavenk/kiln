@@ -34,6 +34,12 @@ export interface Design {
   gloss: number; // 0..1
   speckle: number; // density 0..1
   speckleSize: number; // 0..1
+  /** lamp direction around the frame, degrees. 0 = right, 90 = top */
+  lightAngle: number;
+  /** 0 = low side light, 1 = overhead */
+  lightHeight: number;
+  /** lamp distance from the frame */
+  lightDistance: number;
   photoCount: number; // 1..4
   photos: PhotoSlot[];
 }
@@ -61,6 +67,9 @@ export const defaultDesign = (): Design => ({
   gloss: 0.8,
   speckle: 0.6,
   speckleSize: 0.5,
+  lightAngle: 72,
+  lightHeight: 0.5,
+  lightDistance: 7,
   photoCount: 1,
   photos: defaultPhotos(),
 });
